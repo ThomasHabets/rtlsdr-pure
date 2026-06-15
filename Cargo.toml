@@ -20,3 +20,6 @@ web-sys = "=0.3.77"
 
 [dev-dependencies]
 futures-lite = "2.6.1"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
