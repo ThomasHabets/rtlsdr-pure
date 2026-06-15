@@ -7,7 +7,6 @@ license = "GPL"
 authors = ["Thomas Habets <thomas@habets.se>"]
 readme = "README.md"
 repository = "https://github.com/ThomasHabets/rtlsdr-pure"
-description = "RTL-SDR library implemented in pure Rust"
 keywords = ["radio"]
 
 [dependencies]
