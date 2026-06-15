@@ -1,6 +1,6 @@
 [package]
 name = "rtlsdr-pure"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Pure Rust RTL-SDR driver using cross_usb for native USB and WebUSB"
 license = "GPL-2.0-or-later"
