@@ -2,7 +2,7 @@ use cross_usb::prelude::*;
 use cross_usb::usb::{ControlIn, ControlOut, ControlType, Recipient};
 
 use crate::error::{Error, Result, ResultExt};
-use crate::r82xx::{R82xx, R82xxKind, R82XX_CHECK_ADDR, R82XX_CHECK_VAL, R82XX_IF_FREQ};
+use crate::r82xx::{R82XX_CHECK_ADDR, R82XX_CHECK_VAL, R82XX_IF_FREQ, R82xx, R82xxKind};
 
 pub const DEFAULT_SAMPLE_RATE: u32 = 2_048_000;
 
