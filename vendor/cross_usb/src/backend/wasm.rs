@@ -1,5 +1,5 @@
 //#![cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{prelude::*, JsCast};
 
 use js_sys::{Array, Uint8Array};
 use wasm_bindgen_futures::JsFuture;
@@ -86,6 +86,72 @@ fn matches_filter(device: &WasmUsbDevice, info: &DeviceFilter) -> bool {
     result
 }
 
+fn js_string_property(value: &JsValue, property: &str) -> Option<String> {
+    js_sys::Reflect::get(value, &JsValue::from_str(property))
+        .ok()
+        .and_then(|value| value.as_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn js_error_message(value: &JsValue) -> String {
+    if let Some(message) = value.as_string().filter(|message| !message.is_empty()) {
+        return message;
+    }
+
+    if let Some(error) = value.dyn_ref::<js_sys::Error>() {
+        let name: String = error.name().into();
+        let message: String = error.message().into();
+        return match (name.is_empty(), message.is_empty()) {
+            (false, false) => format!("{name}: {message}"),
+            (false, true) => name,
+            (true, false) => message,
+            (true, true) => "JavaScript exception".to_string(),
+        };
+    }
+
+    match (
+        js_string_property(value, "name"),
+        js_string_property(value, "message"),
+    ) {
+        (Some(name), Some(message)) => format!("{name}: {message}"),
+        (Some(name), None) => name,
+        (None, Some(message)) => message,
+        (None, None) => format!("{value:?}"),
+    }
+}
+
+async fn open_device(device: &WasmUsbDevice) -> Result<(), JsValue> {
+    if !device.opened() {
+        let _ = JsFuture::from(device.open()).await?;
+    }
+
+    if device.configuration().is_none() {
+        let configurations = device.configurations();
+        let configuration_value = if configurations.length() > 0 {
+            configurations.get(0).configuration_value()
+        } else {
+            1
+        };
+        let _ = JsFuture::from(device.select_configuration(configuration_value)).await?;
+    }
+
+    Ok(())
+}
+
+fn is_interface_claimed(device: &WasmUsbDevice, number: u8) -> bool {
+    let Some(configuration) = device.configuration() else {
+        return false;
+    };
+
+    for interface in configuration.interfaces() {
+        if interface.interface_number() == number && interface.claimed() {
+            return true;
+        }
+    }
+
+    false
+}
+
 fn device_request_options(device_filter: &[DeviceFilter]) -> UsbDeviceRequestOptions {
     let filters = device_filter.iter().map(|filter| {
         let js_filter = UsbDeviceFilter::new();
@@ -126,7 +192,7 @@ pub async fn get_device(device_filter: Vec<DeviceFilter>) -> Result<DeviceInfo, 
     // Check if the device is already paired, if so, we don't need to request it again
     for device in device_list {
         if device_filter.iter().any(|info| matches_filter(&device, info)) {
-            let _open_promise = JsFuture::from(device.open()).await?;
+            open_device(&device).await?;
             return Ok(DeviceInfo { device });
         }
     }
@@ -134,7 +200,7 @@ pub async fn get_device(device_filter: Vec<DeviceFilter>) -> Result<DeviceInfo, 
     let filters2 = device_request_options(&device_filter);
     let device: WasmUsbDevice = JsFuture::from(usb.request_device(&filters2)).await?;
 
-    let _open_promise = JsFuture::from(device.open()).await?;
+    open_device(&device).await?;
 
     Ok(DeviceInfo { device })
 }
@@ -157,7 +223,7 @@ pub async fn get_device_list(
     // Check if the device is already paired, if so, we don't need to request it again
     for device in device_list {
         if device_filter.iter().any(|info| matches_filter(&device, info)) {
-            let _open_promise = JsFuture::from(device.open()).await?;
+            open_device(&device).await?;
             devices.push(DeviceInfo { device });
         }
     }
@@ -165,7 +231,7 @@ pub async fn get_device_list(
     let filters2 = device_request_options(&device_filter);
     let device: WasmUsbDevice = JsFuture::from(usb.request_device(&filters2)).await?;
 
-    let _open_promise = JsFuture::from(device.open()).await?;
+    open_device(&device).await?;
 
     devices.push(DeviceInfo { device });
 
@@ -210,15 +276,20 @@ impl UsbDevice for Device {
     type Interface = Interface;
 
     async fn open_interface(&self, number: u8) -> Result<Interface, Error> {
+        if is_interface_claimed(&self.device, number) {
+            return Ok(Interface {
+                device: self.device.clone(),
+                _number: number,
+            });
+        }
+
         let dev_promise = JsFuture::from(self.device.claim_interface(number)).await;
 
         // Wait for the interface to be claimed
         match dev_promise {
             Ok(_) => {}
             Err(err) => {
-                return Err(Error::CommunicationError(
-                    err.as_string().unwrap_or_default(),
-                ));
+                return Err(Error::CommunicationError(js_error_message(&err)));
             }
         }
 
@@ -237,9 +308,7 @@ impl UsbDevice for Device {
 
         match result {
             Ok(_) => Ok(()),
-            Err(err) => Err(Error::CommunicationError(
-                err.as_string().unwrap_or_default(),
-            )),
+            Err(err) => Err(Error::CommunicationError(js_error_message(&err))),
         }
     }
 
@@ -248,9 +317,7 @@ impl UsbDevice for Device {
 
         match result {
             Ok(_) => Ok(()),
-            Err(err) => Err(Error::CommunicationError(
-                err.as_string().unwrap_or_default(),
-            )),
+            Err(err) => Err(Error::CommunicationError(js_error_message(&err))),
         }
     }
 
@@ -287,7 +354,7 @@ impl<'a> UsbInterface<'a> for Interface {
         let transfer_result: UsbInTransferResult =
             match JsFuture::from(self.device.control_transfer_in(&params, length)).await {
             Ok(res) => res,
-            Err(_) => return Err(Error::TransferError),
+            Err(err) => return Err(Error::CommunicationError(js_error_message(&err))),
         };
 
         let data = match transfer_result.data() {
@@ -307,12 +374,12 @@ impl<'a> UsbInterface<'a> for Interface {
         let result: UsbOutTransferResult = match JsFuture::from(
             self.device
                 .control_transfer_out_with_u8_array(&params, &array)
-                .map_err(|j| Error::CommunicationError(j.as_string().unwrap_or_default()))?,
+                .map_err(|j| Error::CommunicationError(js_error_message(&j)))?,
         )
         .await
         {
             Ok(res) => res,
-            Err(_) => return Err(Error::TransferError),
+            Err(err) => return Err(Error::CommunicationError(js_error_message(&err))),
         };
 
         Ok(result.bytes_written() as usize)
@@ -322,7 +389,7 @@ impl<'a> UsbInterface<'a> for Interface {
         let transfer_result: UsbInTransferResult =
             match JsFuture::from(self.device.transfer_in(endpoint, length as u32)).await {
             Ok(res) => res,
-            Err(_) => return Err(Error::TransferError),
+            Err(err) => return Err(Error::CommunicationError(js_error_message(&err))),
         };
 
         let data = match transfer_result.data() {
@@ -341,12 +408,12 @@ impl<'a> UsbInterface<'a> for Interface {
         let transfer_result: UsbOutTransferResult = match JsFuture::from(
             self.device
                 .transfer_out_with_u8_array(endpoint, &array)
-                .map_err(|j| Error::CommunicationError(j.as_string().unwrap_or_default()))?,
+                .map_err(|j| Error::CommunicationError(js_error_message(&j)))?,
         )
         .await
         {
             Ok(res) => res,
-            Err(_) => return Err(Error::TransferError),
+            Err(err) => return Err(Error::CommunicationError(js_error_message(&err))),
         };
 
         Ok(transfer_result.bytes_written() as usize)
