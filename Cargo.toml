@@ -11,8 +11,8 @@ keywords = ["radio"]
 
 [dependencies]
 # TODO: depend on the real cross_usb when it gets its dependency version sorted.
-#cross_usb = "0.4.1"
-cross_usb = {path="vendor/cross_usb"}
+cross_usb = { package = "cross_usb_versionbump", version = "0.4.1" }
+#cross_usb = {path="vendor/cross_usb"}
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 js-sys = "=0.3.102"
