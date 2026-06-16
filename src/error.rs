@@ -41,6 +41,13 @@ impl From<cross_usb::usb::Error> for Error {
 }
 
 #[cfg(target_family = "wasm")]
+impl From<Error> for wasm_bindgen::JsValue {
+    fn from(e: Error) -> Self {
+        wasm_bindgen::JsValue::from_str(&format!("rtlsdr_pure: {e}"))
+    }
+}
+
+#[cfg(target_family = "wasm")]
 impl From<js_sys::Error> for Error {
     fn from(value: js_sys::Error) -> Self {
         Self::WebUsb(value.message().into())
