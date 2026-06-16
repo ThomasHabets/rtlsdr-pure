@@ -7,7 +7,13 @@ use crate::r82xx::{R82XX_CHECK_ADDR, R82XX_CHECK_VAL, R82XX_IF_FREQ, R82xx, R82x
 pub const DEFAULT_SAMPLE_RATE: u32 = 2_048_000;
 
 const DEF_RTL_XTAL_FREQ: u32 = 28_800_000;
+
+#[cfg(target_family = "wasm")]
+const DEFAULT_BULK_ENDPOINT: u8 = 1;
+
+#[cfg(not(target_family = "wasm"))]
 const DEFAULT_BULK_ENDPOINT: u8 = 0x81;
+
 const DEFAULT_READ_LENGTH: usize = 16 * 32 * 512;
 
 const E4K_I2C_ADDR: u8 = 0xc8;
