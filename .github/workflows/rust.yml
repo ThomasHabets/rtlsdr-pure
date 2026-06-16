@@ -16,6 +16,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - name: Install wasm32
+      run: rustup target add wasm32-unknown-unknown
     - name: Cargo install
       run: cargo install --locked tickbox cargo-deny
     - name: Build
